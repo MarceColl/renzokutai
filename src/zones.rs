@@ -1,8 +1,8 @@
 use anyhow::Result;
 use owo_colors::OwoColorize;
+use std::ffi::OsStr;
 use std::io;
 use std::io::Write;
-use std::ffi::OsStr;
 
 #[derive(Debug, Clone)]
 pub enum ZoneType {

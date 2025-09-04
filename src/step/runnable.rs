@@ -1,12 +1,12 @@
-use anyhow::Result;
-use std::collections::HashSet;
-use std::io::{Stdout, Stderr};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::step::ValidatedStep;
-use owo_colors::OwoColorize;
-use tokio::io::{BufReader, AsyncBufReadExt};
+use anyhow::Result;
 use futures::stream::{self, StreamExt};
+use owo_colors::OwoColorize;
+use std::collections::HashSet;
+use std::io::{Stderr, Stdout};
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct StepResult {
@@ -45,7 +45,10 @@ impl InnerRunnableStep {
 
     pub async fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
         self.result.status = Status::Pending;
-        let mut child = pzone.exec(format!("for i in {{1..3}}; do echo \"HELLO FROM {}!\"; sleep 2; done; ls", self.step.name))?;
+        let mut child = pzone.exec(format!(
+            "for i in {{1..3}}; do echo \"HELLO FROM {}!\"; sleep 2; done; ls",
+            self.step.name
+        ))?;
 
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -83,8 +86,7 @@ pub struct RunnableSteps {
 }
 
 impl RunnableSteps {
-    /// Run available steps until completion of the Step set
-    /// This function attempts to run steps in parallel whenever possible
+    /// Run available steps until completion of the Step Set
     pub async fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
         let mut set = tokio::task::JoinSet::new();
 
@@ -92,15 +94,11 @@ impl RunnableSteps {
             match self.unblocked_steps().await {
                 Some(mut steps) => {
                     for step in steps.drain(..) {
-                        {
-                            let cloned_pzone = pzone.clone();
-                            set.spawn(async move {
-                                step.write().await.run(&cloned_pzone).await
-                            });
-                        }
+                        let cloned_pzone = pzone.clone();
+                        set.spawn(async move { step.write().await.run(&cloned_pzone).await });
                     }
-                },
-                None => ()
+                }
+                None => (),
             }
 
             match set.join_next().await {
@@ -114,15 +112,15 @@ impl RunnableSteps {
 
     async fn unblocked_steps(&mut self) -> Option<Vec<RunnableStep>> {
         let remaining: Vec<_> = stream::iter(&self.steps)
-                .filter_map(async |s| {
-                    let inner = s.read().await;
-                    match inner.result.status {
-                        Status::Pending | Status::Running => Some(s.clone()),
-                        _ => None
-                    }
-                })
-                .collect()
-                .await;
+            .filter_map(async |s| {
+                let inner = s.read().await;
+                match inner.result.status {
+                    Status::Pending | Status::Running => Some(s.clone()),
+                    _ => None,
+                }
+            })
+            .collect()
+            .await;
 
         if remaining.is_empty() {
             None
@@ -132,18 +130,16 @@ impl RunnableSteps {
                     let s = s.read().await;
                     match s.result.status {
                         Status::Finished => Some(s.step.name.clone()),
-                        _ => None
+                        _ => None,
                     }
                 })
                 .collect()
                 .await;
 
             let available: Vec<_> = stream::iter(remaining)
-                .filter_map(async |s| {
-                    match s.read().await.is_available(&completed) {
-                        true => Some(s.clone()),
-                        false => None
-                    }
+                .filter_map(async |s| match s.read().await.is_available(&completed) {
+                    true => Some(s.clone()),
+                    false => None,
                 })
                 .collect()
                 .await;

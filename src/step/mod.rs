@@ -1,27 +1,27 @@
 ///! # Pipeline Steps Module
-///! 
-///! This module implements a pipeline execution system that manages steps with 
+///!
+///! This module implements a pipeline execution system that manages steps with
 ///! dependencies, ensuring proper execution order and handling step lifecycle states.
-///! 
+///!
 ///! ## Architecture
-///! 
+///!
 ///! The pipeline system uses three main types representing different stages of a step's lifecycle:
-///! 
+///!
 ///!    RAW CONFIG                      VALIDATED                           RUNTIME EXECUTION
 ///!                                                  
 ///!  ┌──────────┐                  ┌─────────────────┐                     ┌────────────────┐
 ///!  │   Step   │── .validate() ──▶│  ValidatedStep  │── .as_runnable() ──▶│  RunnableStep  │
 ///!  └──────────┘                  └─────────────────┘                     └────────────────┘
-///! 
+///!
 ///! CONTAINER TYPES:
-///! 
+///!
 ///!                                ┌─────────────────┐                     ┌─────────────────┐
 ///!                                │ ValidatedSteps  │── .as_runnable() ──▶│  RunnableSteps  │
 ///!                                └─────────────────┘                     └─────────────────┘
-///! 
-///! 
+///!
+///!
 ///! STATUS TRANSITIONS:
-///! 
+///!
 ///!  Pending ──▶ Running ──▶ Finished
 ///!                 │
 ///!                 ▼
@@ -83,7 +83,6 @@ pub struct ValidatedStep {
     #[serde(rename = "depend")]
     pub depends: Vec<ValidatedDependency>,
 }
-
 
 impl Step {
     pub fn validate(&self) -> Result<ValidatedStep> {
@@ -149,7 +148,7 @@ impl ValidatedStep {
     pub fn as_runnable(&self) -> RunnableStep {
         Arc::new(RwLock::new(InnerRunnableStep {
             step: self.clone(),
-            result: StepResult::default()
+            result: StepResult::default(),
         }))
     }
 
@@ -205,7 +204,6 @@ mod tests {
         } else {
             panic!("Should have returned some steps");
         }
-
     }
 
     #[test]
@@ -225,7 +223,9 @@ mod tests {
             ValidatedStep {
                 name: "test".to_string(),
                 script: "test.sh".to_string(),
-                depends: vec![ValidatedDependency { name: "build".to_string() }],
+                depends: vec![ValidatedDependency {
+                    name: "build".to_string(),
+                }],
             },
         );
 
@@ -254,13 +254,8 @@ mod tests {
 
                 assert_eq!(iter.next(), None);
             }
-
         } else {
             panic!("Should have returned some steps");
         }
-
     }
 }
-
-
-

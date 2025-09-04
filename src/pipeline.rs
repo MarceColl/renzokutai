@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::step::{ValidatedStep, ValidatedDependency, ValidatedSteps};
+use crate::step::{ValidatedDependency, ValidatedStep, ValidatedSteps};
 use anyhow::Result;
+use std::collections::HashMap;
 
 pub async fn run_pipeline(source_pzone: &crate::zones::PipelineZone) -> Result<()> {
     let pzone = crate::zones::create_zone_from_base(source_pzone).await?;
