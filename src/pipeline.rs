@@ -19,13 +19,14 @@ pub async fn run_pipeline(source_pzone: &crate::zones::PipelineZone) -> Result<(
         ValidatedStep {
             name: "test".to_string(),
             script: "test.sh".to_string(),
-            depends: vec![ValidatedDependency { name: "build".to_string() }],
+            // depends: vec![ValidatedDependency { name: "build".to_string() }],
+            depends: Vec::new(),
         },
     );
 
     let steps = ValidatedSteps { steps_by_name };
     let mut rsteps = steps.as_runnable();
-    match rsteps.run(&pzone) {
+    match rsteps.run(&pzone).await {
         Ok(()) => (),
         Err(err) => println!("Error: {}", err),
     };

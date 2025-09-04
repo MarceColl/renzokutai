@@ -4,7 +4,7 @@ use std::io;
 use std::io::Write;
 use std::ffi::OsStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ZoneType {
     Base,
     Run(String),
@@ -19,7 +19,7 @@ impl ZoneType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PipelineZone {
     pub pipeline: String,
     pub zone_type: ZoneType,
@@ -49,11 +49,13 @@ impl PipelineZone {
         }
     }
 
-    pub fn exec(&self, command: impl AsRef<OsStr>) -> Result<()> {
-        let output = zone::Zlogin::new(self.name()).exec_blocking(command)?;
-        println!("Output from {}", self.name().cyan());
-        println!("\n{}\n", output);
-        Ok(())
+    pub fn exec(&self, command: impl AsRef<OsStr>) -> Result<tokio::process::Child> {
+        let command = zone::Zlogin::new(self.name()).as_command(command);
+
+        Ok(tokio::process::Command::from(command)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?)
     }
 
     pub fn cleanup(&self) -> Result<()> {

@@ -1,11 +1,44 @@
+///! # Pipeline Steps Module
+///! 
+///! This module implements a pipeline execution system that manages steps with 
+///! dependencies, ensuring proper execution order and handling step lifecycle states.
+///! 
+///! ## Architecture
+///! 
+///! The pipeline system uses three main types representing different stages of a step's lifecycle:
+///! 
+///!    RAW CONFIG                      VALIDATED                           RUNTIME EXECUTION
+///!                                                  
+///!  ┌──────────┐                  ┌─────────────────┐                     ┌────────────────┐
+///!  │   Step   │── .validate() ──▶│  ValidatedStep  │── .as_runnable() ──▶│  RunnableStep  │
+///!  └──────────┘                  └─────────────────┘                     └────────────────┘
+///! 
+///! CONTAINER TYPES:
+///! 
+///!                                ┌─────────────────┐                     ┌─────────────────┐
+///!                                │ ValidatedSteps  │── .as_runnable() ──▶│  RunnableSteps  │
+///!                                └─────────────────┘                     └─────────────────┘
+///! 
+///! 
+///! STATUS TRANSITIONS:
+///! 
+///!  Pending ──▶ Running ──▶ Finished
+///!                 │
+///!                 ▼
+///!               Failed
+///!
 use crate::Value;
 use anyhow::{Result, anyhow};
 use owo_colors::OwoColorize;
 use serde::Serialize;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::iter::Iterator;
-use std::rc::Rc;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+mod runnable;
+
+pub use runnable::*;
 
 /// Container of steps to run in a pipeline
 pub struct ValidatedSteps {
@@ -15,87 +48,11 @@ pub struct ValidatedSteps {
 impl ValidatedSteps {
     pub fn as_runnable(&self) -> RunnableSteps {
         RunnableSteps {
-            steps_by_name: self
+            steps: self
                 .steps_by_name
                 .iter()
-                .map(|(k, s)| (k.clone(), Rc::new(RefCell::new(s.as_runnable()))))
+                .map(|(_k, s)| s.as_runnable())
                 .collect(),
-        }
-    }
-}
-
-pub struct RunnableSteps {
-    steps_by_name: HashMap<String, Rc<RefCell<RunnableStep>>>,
-}
-
-impl RunnableSteps {
-    pub fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
-        for steps in self.iter_mut() {
-            match steps {
-                Some(steps) => {
-                    for step in steps {
-                        step.borrow_mut().run(pzone)?;
-                    }
-                },
-                None => ()
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn iter_mut(&mut self) -> StepsIter {
-        StepsIter {
-            steps: self.steps_by_name.iter().map(|(_k, s)| s.clone()).collect(),
-        }
-    }
-}
-
-struct StepsIter {
-    // NOTE(Marce): I thought about using a toposort here, but I believe there
-    // may be cases where we do not start a step earlier due to the linearized
-    // nature of toposort even though it's available, so on each `next` I'll just
-    // check for available steps.
-    // We are still validating that there are no cycles at ValidatedSteps creation
-    // so I *believe* we are bound to eventually make work even if individual
-    // calls to next may not advance.
-    steps: Vec<Rc<RefCell<RunnableStep>>>,
-}
-
-impl Iterator for StepsIter {
-    // We nest two options, the top level option means "We are done with the steps",
-    // the Inner option means "we cannot run any step right now".
-    type Item = Option<Vec<Rc<RefCell<RunnableStep>>>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let remaining: Vec<_> = self
-                .steps
-                .iter()
-                .filter(|s| s.borrow().status == Status::Pending || s.borrow().status == Status::Running)
-                .map(|s| s.clone())
-                .collect();
-
-        if remaining.is_empty() {
-            None
-        } else {
-            let completed = self
-                .steps
-                .iter()
-                .filter(|s| s.borrow().status == Status::Finished)
-                .map(|s| s.borrow().step.name.clone())
-                .collect();
-
-            let available: Vec<_> = remaining
-                .iter()
-                .filter(|s| s.borrow().is_available(&completed))
-                .map(|s| s.clone())
-                .collect();
-
-            if available.is_empty() {
-                Some(None)
-            } else {
-                Some(Some(available))
-            }
         }
     }
 }
@@ -127,32 +84,6 @@ pub struct ValidatedStep {
     pub depends: Vec<ValidatedDependency>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Status {
-    Pending,
-    Running,
-    Failed,
-    Finished,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct RunnableStep {
-    step: ValidatedStep,
-    status: Status,
-}
-
-impl RunnableStep {
-    pub fn is_available(&self, finished_steps: &HashSet<String>) -> bool {
-        self.step.is_available(finished_steps) && self.status == Status::Pending
-    }
-
-    pub fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
-        self.status = Status::Pending;
-        pzone.exec(format!("echo 'HOLA!'"))?;
-        self.status = Status:: Finished;
-        Ok(())
-    }
-}
 
 impl Step {
     pub fn validate(&self) -> Result<ValidatedStep> {
@@ -216,10 +147,10 @@ impl ValidatedStep {
     }
 
     pub fn as_runnable(&self) -> RunnableStep {
-        RunnableStep {
+        Arc::new(RwLock::new(InnerRunnableStep {
             step: self.clone(),
-            status: Status::Pending,
-        }
+            result: StepResult::default()
+        }))
     }
 
     pub fn is_available(&self, finished_steps: &HashSet<String>) -> bool {
