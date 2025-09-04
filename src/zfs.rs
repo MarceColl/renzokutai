@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use std::process::{Stdio};
+use anyhow::{Result, anyhow};
+use std::process::Stdio;
 
 pub async fn base_dataset_exists(name: &String) -> Result<bool> {
     let status = tokio::process::Command::new("zfs")

@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use std::process::{Stdio};
+use anyhow::Result;
+use std::process::Stdio;
 
 pub async fn ensure_nic_exists(name: &String) -> Result<()> {
     if !nic_exists(name).await? {

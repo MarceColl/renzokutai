@@ -1,31 +1,31 @@
-use anyhow::{anyhow, Context, Result};
-use std::io;
-use std::rc::Rc;
-use std::io::Write;
-use std::cell::RefCell;
-use std::time::Duration;
-use serde::{Serialize,Deserialize};
+use anyhow::{Result, anyhow};
 use axum::{
-    routing::{get, post},
-    http::StatusCode,
     Json, Router,
+    http::StatusCode,
+    routing::{get, post},
 };
+use itertools::Itertools;
 use nom::{
-    Parser,
+    IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::{char, multispace0, multispace1},
     combinator::{map, opt, rest},
     sequence::{preceded, separated_pair},
-    IResult,
 };
 use owo_colors::OwoColorize;
-use itertools::Itertools;
+use serde::Serialize;
+use std::cell::RefCell;
+use std::io;
+use std::io::Write;
+use std::rc::Rc;
+use std::time::Duration;
 
-mod zfs;
 mod dladm;
-mod zones;
 mod pipeline;
+mod step;
+mod zfs;
+mod zones;
 
 pub trait Filterable {
     fn filter(&self, filter: &Option<Filter>) -> bool {
@@ -38,7 +38,7 @@ pub trait Filterable {
     fn inner_filter(&self, filter: &Filter) -> bool;
 }
 
-#[derive(Debug,Default,PartialEq,Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum Value<T> {
     #[default]
     Unset,
@@ -52,14 +52,14 @@ enum Provider {
     PkgSrc,
 }
 
-#[derive(Debug,Default)]
+#[derive(Debug, Default)]
 struct Repo {
     url: Value<String>,
 }
 
-#[derive(Debug,Serialize)]
+#[derive(Debug, Serialize)]
 struct ValidatedRepo {
-    #[serde(rename="@url")]
+    #[serde(rename = "@url")]
     url: String,
 }
 
@@ -67,21 +67,19 @@ impl Filterable for Repo {
     fn inner_filter(&self, filter: &Filter) -> bool {
         match filter.key.as_str() {
             "url" => self.url == Value::Set(filter.value.clone()),
-            _ => false
+            _ => false,
         }
     }
 }
 
 impl Repo {
     pub fn validate(&self) -> Result<ValidatedRepo> {
-        let url= match &self.url {
+        let url = match &self.url {
             Value::Unset => Err(anyhow!("url is unset")),
             Value::Set(url) => Ok(url),
         }?;
 
-        Ok(ValidatedRepo  {
-            url: url.clone(),
-        })
+        Ok(ValidatedRepo { url: url.clone() })
     }
 
     pub fn name(&self) -> String {
@@ -93,7 +91,10 @@ impl Repo {
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         match key.as_str() {
-            "url" => { self.url = Value::Set(value); Ok(()) },
+            "url" => {
+                self.url = Value::Set(value);
+                Ok(())
+            }
             _ => Err(anyhow!("Unknown attribute for repo: {}", key)),
         }
     }
@@ -107,9 +108,9 @@ struct Package {
 
 #[derive(Debug, Serialize)]
 struct ValidatedPackage {
-    #[serde(rename="@provider")]
+    #[serde(rename = "@provider")]
     provider: String,
-    #[serde(rename="@name")]
+    #[serde(rename = "@name")]
     name: String,
 }
 
@@ -139,8 +140,14 @@ impl Package {
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         match key.as_str() {
-            "name" => { self.name = Value::Set(value); Ok(()) },
-            "provider" => { self.provider = Value::Set(value); Ok(()) },
+            "name" => {
+                self.name = Value::Set(value);
+                Ok(())
+            }
+            "provider" => {
+                self.provider = Value::Set(value);
+                Ok(())
+            }
             _ => Err(anyhow!("Unknown attribute for package: {}", key)),
         }
     }
@@ -151,70 +158,7 @@ impl Filterable for Package {
         match filter.key.as_str() {
             "name" => self.name == Value::Set(filter.value.clone()),
             "provider" => self.provider == Value::Set(filter.value.clone()),
-            _ => false
-        }
-    }
-}
-
-
-#[derive(Debug, Default)]
-struct Step {
-    name: Value<String>,
-    script: Value<String>,
-    depends: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct ValidatedStep {
-    #[serde(rename="@name")]
-    name: String,
-    #[serde(rename="@script")]
-    script: String,
-    #[serde(rename="depend")]
-    depends: Option<String>,
-}
-
-impl Step {
-    pub fn validate(&self) -> Result<ValidatedStep> {
-        let name = match &self.name {
-            Value::Unset => Err(anyhow!("name is unset")),
-            Value::Set(name) => Ok(name),
-        }?;
-        let script = match &self.script {
-            Value::Unset => Err(anyhow!("script is unset")),
-            Value::Set(script) => Ok(script),
-        }?;
-        Ok(ValidatedStep {
-            name: name.clone(),
-            script: script.clone(),
-            depends: self.depends.clone(),
-        })
-    }
-
-    pub fn name(&self) -> String {
-        match &self.name {
-            Value::Unset => "step".to_string(),
-            Value::Set(v) => format!("step({})", v.cyan()),
-        }
-    }
-
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        match key.as_str() {
-            "name" => { self.name = Value::Set(value); Ok(()) },
-            "script" => { self.script = Value::Set(value); Ok(()) },
-            "depends" => { self.depends = Some(value); Ok(()) },
-            _ => Err(anyhow!("Unknown attribute for package: {}", key)),
-        }
-    }
-}
-
-impl Filterable for Step {
-    fn inner_filter(&self, filter: &Filter) -> bool {
-        match filter.key.as_str() {
-            "name" => self.name == Value::Set(filter.value.clone()),
-            "script" => self.script == Value::Set(filter.value.clone()),
-            "depends" => self.depends == Some(filter.value.clone()),
-            _ => false
+            _ => false,
         }
     }
 }
@@ -224,22 +168,22 @@ struct Pipeline {
     name: Value<String>,
     repos: Vec<Rc<RefCell<Repo>>>,
     packages: Vec<Rc<RefCell<Package>>>,
-    steps: Vec<Rc<RefCell<Step>>>,
+    steps: Vec<Rc<RefCell<crate::step::Step>>>,
 }
 
 #[derive(Debug, Serialize)]
 struct ValidatedPipeline {
-    #[serde(rename="@name")]
+    #[serde(rename = "@name")]
     name: String,
 
-    #[serde(rename="repo")]
+    #[serde(rename = "repo")]
     repos: Vec<ValidatedRepo>,
 
-    #[serde(rename="package")]
+    #[serde(rename = "package")]
     packages: Vec<ValidatedPackage>,
 
-    #[serde(rename="steps")]
-    steps: Vec<ValidatedStep>,
+    #[serde(rename = "steps")]
+    steps: Vec<crate::step::ValidatedStep>,
 }
 
 impl Pipeline {
@@ -260,12 +204,30 @@ impl Pipeline {
         let name = match &self.name {
             Value::Unset => Err(anyhow!("name is unset")),
             Value::Set(name) => Ok(name),
-        }?.clone();
-        let repos = self.repos.iter().map(|r| r.borrow().validate()).collect::<Result<Vec<ValidatedRepo>>>()?;
-        let packages = self.packages.iter().map(|p| p.borrow().validate()).collect::<Result<Vec<ValidatedPackage>>>()?;
-        let steps = self.steps.iter().map(|s| s.borrow().validate()).collect::<Result<Vec<ValidatedStep>>>()?;
+        }?
+        .clone();
+        let repos = self
+            .repos
+            .iter()
+            .map(|r| r.borrow().validate())
+            .collect::<Result<Vec<ValidatedRepo>>>()?;
+        let packages = self
+            .packages
+            .iter()
+            .map(|p| p.borrow().validate())
+            .collect::<Result<Vec<ValidatedPackage>>>()?;
+        let steps = self
+            .steps
+            .iter()
+            .map(|s| s.borrow().validate())
+            .collect::<Result<Vec<crate::step::ValidatedStep>>>()?;
 
-        Ok(ValidatedPipeline { name, repos, packages, steps })
+        Ok(ValidatedPipeline {
+            name,
+            repos,
+            packages,
+            steps,
+        })
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
@@ -273,15 +235,16 @@ impl Pipeline {
             "name" => {
                 self.name = Value::Set(value);
                 Ok(())
-            },
-            _ => Err(anyhow!("Unknown key: {}", key))
+            }
+            _ => Err(anyhow!("Unknown key: {}", key)),
         }
     }
 
     pub fn select(&self, ty: String, filter: Option<Filter>) -> Result<Frame> {
         match ty.as_str() {
             "package" => {
-                let matching: Vec<_> = self.packages
+                let matching: Vec<_> = self
+                    .packages
                     .iter()
                     .filter(|f| f.borrow().filter(&filter))
                     .collect();
@@ -291,9 +254,10 @@ impl Pipeline {
                     [] => Err(anyhow!("No element matched the filter")),
                     _ => Err(anyhow!("More than one element matched the filter")),
                 }
-            },
+            }
             "repo" => {
-                let matching: Vec<_> = self.repos
+                let matching: Vec<_> = self
+                    .repos
                     .iter()
                     .filter(|f| f.borrow().filter(&filter))
                     .collect();
@@ -303,9 +267,10 @@ impl Pipeline {
                     [] => Err(anyhow!("No element matched the filter")),
                     _ => Err(anyhow!("More than one element matched the filter")),
                 }
-            },
+            }
             "step" => {
-                let matching: Vec<_> = self.steps
+                let matching: Vec<_> = self
+                    .steps
                     .iter()
                     .filter(|f| f.borrow().filter(&filter))
                     .collect();
@@ -315,7 +280,7 @@ impl Pipeline {
                     [] => Err(anyhow!("No element matched the filter")),
                     _ => Err(anyhow!("More than one element matched the filter")),
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -328,7 +293,7 @@ impl ValidatedPipeline {
         self.ensure_zone_exists().await?;
         self.install_packages()?;
         self.clone_repos().await?;
-        self.execute_steps().await?;
+        // self.execute_steps().await?;
         self.halt_zone().await?;
 
         println!("Pipeline {} created", self.name.cyan());
@@ -353,24 +318,13 @@ impl ValidatedPipeline {
         Ok(())
     }
 
-    pub async fn execute_steps(&self) -> Result<()> {
-        for step in self.steps.iter() {
-            println!("Running {} step", step.name.yellow());
-            // TODO(Marce): Run step
-        }
-
-        Ok(())
-    }
-
     pub async fn halt_zone(&self) -> Result<()> {
-        zone::Adm::new(self.zone_name())
-            .halt_blocking()?;
+        zone::Adm::new(self.zone_name()).halt_blocking()?;
 
         Ok(())
     }
 
     pub async fn ensure_zone_exists(&self) -> Result<()> {
-        let zones = zone::Adm::list_blocking()?;
         let pzone = crate::zones::PipelineZone {
             pipeline: self.name.clone(),
             zone_type: crate::zones::ZoneType::Base,
@@ -390,17 +344,15 @@ impl ValidatedPipeline {
 
         print!("Installing zone...");
         io::stdout().lock().flush().unwrap();
-        zone::Adm::new(self.zone_name())
-            .install_blocking(&[])?;
+        zone::Adm::new(self.zone_name()).install_blocking(&[])?;
         println!("{}", "DONE".green());
 
         print!("Booting zone...");
         io::stdout().lock().flush().unwrap();
-        zone::Adm::new(self.zone_name())
-            .boot_blocking()?;
+        zone::Adm::new(self.zone_name()).boot_blocking()?;
         println!("{}", "DONE".green());
 
-        tokio::time::sleep(Duration::new(30,0)).await;
+        tokio::time::sleep(Duration::new(30, 0)).await;
 
         // Setup network access
         crate::zones::configure_zone_networking(&pzone).await?;
@@ -412,8 +364,7 @@ impl ValidatedPipeline {
         for repo in self.repos.iter() {
             print!("Cloning repo {}...", repo.url.yellow());
             io::stdout().lock().flush().unwrap();
-            zone::Zlogin::new(self.zone_name())
-                .exec_blocking(format!("git clone {}", repo.url))?;
+            zone::Zlogin::new(self.zone_name()).exec_blocking(format!("git clone {}", repo.url))?;
             println!("{}", "DONE".green());
         }
 
@@ -421,12 +372,13 @@ impl ValidatedPipeline {
     }
 
     pub fn install_packages(&self) -> Result<()> {
-        print!("Installing packages ({}) This may take a while...", "elixir".yellow());
+        print!(
+            "Installing packages ({}) This may take a while...",
+            "elixir".yellow()
+        );
         io::stdout().lock().flush().unwrap();
-        zone::Zlogin::new(self.zone_name())
-            .exec_blocking("pkg install git")?;
-        zone::Zlogin::new(self.zone_name())
-            .exec_blocking("pkgin -y install elixir")?;
+        zone::Zlogin::new(self.zone_name()).exec_blocking("pkg install git")?;
+        zone::Zlogin::new(self.zone_name()).exec_blocking("pkgin -y install elixir")?;
         println!("{}", "DONE".green());
         Ok(())
     }
@@ -450,17 +402,9 @@ pub struct Filter {
 }
 
 pub enum CfgCommand {
-    Select {
-        ty: String,
-        filter: Option<Filter>, 
-    },
-    Set {
-        key: String,
-        value: String,
-    },
-    Add {
-        ty: String,
-    },
+    Select { ty: String, filter: Option<Filter> },
+    Set { key: String, value: String },
+    Add { ty: String },
     Print,
     End,
     Commit,
@@ -495,10 +439,7 @@ fn parse_select(input: &str) -> IResult<&str, CfgCommand> {
             tag("select"),
             multispace1,
             identifier,
-            opt((
-                multispace1,
-                key_value_pair
-            )),
+            opt((multispace1, key_value_pair)),
         ),
         |(_, _, ty, kv)| CfgCommand::Select {
             ty: ty.to_string(),
@@ -507,10 +448,11 @@ fn parse_select(input: &str) -> IResult<&str, CfgCommand> {
                     key: name.to_string(),
                     value: value.to_string(),
                 }),
-                None => None
+                None => None,
             },
         },
-    ).parse(input)
+    )
+    .parse(input)
 }
 
 // Parse "set name=test" command
@@ -521,25 +463,32 @@ fn parse_set(input: &str) -> IResult<&str, CfgCommand> {
             key: name.to_string(),
             value: value.to_string(),
         },
-    ).parse(input)
+    )
+    .parse(input)
 }
 
 // Parse "add attr" command
 fn parse_add(input: &str) -> IResult<&str, CfgCommand> {
-    map(
-        (tag("add"), multispace1, identifier),
-        |(_, _, ty)| CfgCommand::Add {
-            ty: ty.to_string(),
-        },
-    ).parse(input)
+    map((tag("add"), multispace1, identifier), |(_, _, ty)| {
+        CfgCommand::Add { ty: ty.to_string() }
+    })
+    .parse(input)
 }
 
 // Main parser that tries all command types
 pub fn parse_command(input: &str) -> IResult<&str, CfgCommand> {
     preceded(
         multispace0,
-        alt((parse_end, parse_print, parse_select, parse_set, parse_add, parse_commit)),
-    ).parse(input)
+        alt((
+            parse_end,
+            parse_print,
+            parse_select,
+            parse_set,
+            parse_add,
+            parse_commit,
+        )),
+    )
+    .parse(input)
 }
 
 pub fn prompt_read(prompt: &str) -> String {
@@ -557,7 +506,7 @@ pub fn prompt_read(prompt: &str) -> String {
 #[derive(Debug)]
 pub enum Frame {
     Pipeline(Rc<RefCell<Pipeline>>),
-    Step(Rc<RefCell<Step>>),
+    Step(Rc<RefCell<crate::step::Step>>),
     Package(Rc<RefCell<Package>>),
     Repo(Rc<RefCell<Repo>>),
 }
@@ -593,9 +542,13 @@ impl CfgState {
 
     pub fn prompt(&self) -> String {
         [
-            ["cicfg".to_string()].into_iter().chain(self.stack.iter().map(|x| format!("{}", x.name().yellow()))).join(":"),
-            "> ".to_string()
-        ].join("")
+            ["cicfg".to_string()]
+                .into_iter()
+                .chain(self.stack.iter().map(|x| format!("{}", x.name().yellow())))
+                .join(":"),
+            "> ".to_string(),
+        ]
+        .join("")
     }
 
     pub fn stack_top(&self) -> Option<&Frame> {
@@ -608,55 +561,44 @@ impl CfgState {
                 let frame = pipeline.borrow().select(ty, filter)?;
                 self.stack.push(frame);
                 Ok(())
-            },
+            }
             _ => Err(anyhow!("Can't select anything from here")),
         }
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         match self.stack_top() {
-            Some(Frame::Pipeline(pipeline)) => pipeline
-                .borrow_mut()
-                .set(key, value),
-            Some(Frame::Package(package)) => package
-                .borrow_mut()
-                .set(key, value),
-            Some(Frame::Repo(repo)) => repo
-                .borrow_mut()
-                .set(key, value),
-            Some(Frame::Step(step)) => step
-                .borrow_mut()
-                .set(key, value),
+            Some(Frame::Pipeline(pipeline)) => pipeline.borrow_mut().set(key, value),
+            Some(Frame::Package(package)) => package.borrow_mut().set(key, value),
+            Some(Frame::Repo(repo)) => repo.borrow_mut().set(key, value),
+            Some(Frame::Step(step)) => step.borrow_mut().set(key, value),
             None => unreachable!(),
-            frame => Err(anyhow!("Unsupported frame value: {:?}", frame)),
         }?;
         Ok(())
     }
 
     pub fn add(&mut self, ty: String) -> Result<()> {
         match self.stack_top() {
-            Some(Frame::Pipeline(pipeline)) => {
-                match ty.as_str() {
-                    "package" => {
-                        let p = Rc::new(RefCell::new(Package::default()));
-                        pipeline.borrow_mut().packages.push(p.clone());
-                        self.stack.push(Frame::Package(p.clone()));
-                        Ok(())
-                    },
-                    "repo" => {
-                        let p = Rc::new(RefCell::new(Repo::default()));
-                        pipeline.borrow_mut().repos.push(p.clone());
-                        self.stack.push(Frame::Repo(p.clone()));
-                        Ok(())
-                    },
-                    "step" => {
-                        let p = Rc::new(RefCell::new(Step::default()));
-                        pipeline.borrow_mut().steps.push(p.clone());
-                        self.stack.push(Frame::Step(p.clone()));
-                        Ok(())
-                    },
-                    _ => todo!()
+            Some(Frame::Pipeline(pipeline)) => match ty.as_str() {
+                "package" => {
+                    let p = Rc::new(RefCell::new(Package::default()));
+                    pipeline.borrow_mut().packages.push(p.clone());
+                    self.stack.push(Frame::Package(p.clone()));
+                    Ok(())
                 }
+                "repo" => {
+                    let p = Rc::new(RefCell::new(Repo::default()));
+                    pipeline.borrow_mut().repos.push(p.clone());
+                    self.stack.push(Frame::Repo(p.clone()));
+                    Ok(())
+                }
+                "step" => {
+                    let p = Rc::new(RefCell::new(crate::step::Step::default()));
+                    pipeline.borrow_mut().steps.push(p.clone());
+                    self.stack.push(Frame::Step(p.clone()));
+                    Ok(())
+                }
+                _ => todo!(),
             },
             _ => todo!(),
         }
@@ -686,30 +628,28 @@ pub async fn builder() -> Result<()> {
             Ok((_, CfgCommand::Print)) => {
                 println!("{:?}", state.stack_top().unwrap());
                 Ok(())
-            },
+            }
             Ok((_, CfgCommand::End)) => {
                 state.end()?;
                 Ok(())
-            },
+            }
             Ok((_, CfgCommand::Commit)) => {
                 match state.inner.borrow().validate() {
                     Ok(vp) => {
                         let xml = serde_xml_rs::to_string(&vp).unwrap();
                         println!("{}", xml);
                         vp.apply().await?;
-                    },
+                    }
                     Err(err) => println!("{:?}", err),
                 };
                 Ok(())
-            },
+            }
             Err(_) => {
                 println!("Unrecognized command");
                 Ok(())
-            },
+            }
         }?;
     }
-
-    Ok(())
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -747,5 +687,3 @@ async fn main() -> Result<()> {
 async fn root() -> &'static str {
     "Hello, World!"
 }
-
-

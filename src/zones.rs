@@ -1,7 +1,8 @@
+use anyhow::Result;
+use owo_colors::OwoColorize;
 use std::io;
 use std::io::Write;
-use anyhow::{Result};
-use owo_colors::OwoColorize;
+use std::ffi::OsStr;
 
 #[derive(Debug)]
 pub enum ZoneType {
@@ -48,23 +49,31 @@ impl PipelineZone {
         }
     }
 
+    pub fn exec(&self, command: impl AsRef<OsStr>) -> Result<()> {
+        let output = zone::Zlogin::new(self.name()).exec_blocking(command)?;
+        println!("Output from {}", self.name().cyan());
+        println!("\n{}\n", output);
+        Ok(())
+    }
+
     pub fn cleanup(&self) -> Result<()> {
         if let Some(mut state) = get_zone_state(&self)? {
-            print!("Zone {} already exists in state {:?}...", self.name().cyan(), state);
+            print!(
+                "Zone {} already exists in state {:?}...",
+                self.name().cyan(),
+                state
+            );
             io::stdout().lock().flush().unwrap();
 
             if state == zone::State::Running {
-                zone::Adm::new(self.name())
-                    .halt_blocking()?;
+                zone::Adm::new(self.name()).halt_blocking()?;
                 state = zone::State::Installed;
                 print!("{}", " HALTED".yellow());
                 io::stdout().lock().flush().unwrap();
             }
 
             if state == zone::State::Installed {
-                zone::Adm::new(self.name())
-                    .uninstall_blocking(true)?;
-                state = zone::State::Configured;
+                zone::Adm::new(self.name()).uninstall_blocking(true)?;
                 print!("{}", " UNINSTALLED".yellow());
                 io::stdout().lock().flush().unwrap();
             }
@@ -79,9 +88,7 @@ impl PipelineZone {
         print!("Deleting {:?}...", self.name().cyan());
         io::stdout().lock().flush().unwrap();
 
-        zone::Config::new(self.name())
-            .delete(true)
-            .run_blocking()?;
+        zone::Config::new(self.name()).delete(true).run_blocking()?;
         println!(" {}", "DONE".green());
 
         Ok(())
@@ -89,10 +96,10 @@ impl PipelineZone {
 }
 
 fn get_zone_state(pzone: &PipelineZone) -> Result<Option<zone::State>> {
-   Ok(match get_zone(pzone)? {
-       Some(z) => Some(z.state),
-       None => None,
-   })
+    Ok(match get_zone(pzone)? {
+        Some(z) => Some(z.state),
+        None => None,
+    })
 }
 
 fn get_zone(pzone: &PipelineZone) -> Result<Option<zone::Zone>> {
@@ -106,6 +113,11 @@ fn list() -> Result<Vec<zone::Zone>> {
 pub async fn create_zone_from_base(base_pzone: &PipelineZone) -> Result<PipelineZone> {
     let run_pzone = base_pzone.get_run_pzone();
 
+    print!("Creating VNIC {}...", run_pzone.vnic_name().cyan());
+    io::stdout().lock().flush().unwrap();
+    crate::dladm::ensure_nic_exists(&run_pzone.vnic_name()).await?;
+    println!("{}", "DONE".green());
+
     print!("Configuring zone {}...", run_pzone.name().cyan());
     io::stdout().lock().flush().unwrap();
     crate::zones::configure_zone_with_default_config(&run_pzone).await?;
@@ -113,19 +125,19 @@ pub async fn create_zone_from_base(base_pzone: &PipelineZone) -> Result<Pipeline
 
     print!("Cloning source zone {}...", base_pzone.name().cyan());
     io::stdout().lock().flush().unwrap();
-    zone::Adm::new(run_pzone.name())
-        .clone_blocking(base_pzone.name())?;
+    zone::Adm::new(run_pzone.name()).clone_blocking(base_pzone.name())?;
+    println!("{}", "DONE".green());
+
+    print!("Booting zone {}...", run_pzone.name().cyan());
+    io::stdout().lock().flush().unwrap();
+    zone::Adm::new(run_pzone.name()).boot_blocking()?;
     println!("{}", "DONE".green());
 
     Ok(run_pzone)
 }
 
 pub async fn configure_zone_with_default_config(pzone: &PipelineZone) -> Result<()> {
-    let mut cfg = zone::Config::create(
-        pzone.name(),
-        true, 
-        zone::CreationOptions::Default
-    );
+    let mut cfg = zone::Config::create(pzone.name(), true, zone::CreationOptions::Default);
 
     cfg.get_global()
         .set_path(pzone.path())
@@ -150,19 +162,23 @@ pub async fn configure_zone_with_default_config(pzone: &PipelineZone) -> Result<
 pub async fn configure_zone_networking(pzone: &PipelineZone) -> Result<()> {
     let ip = "10.0.0.100";
     let command = format!("ipadm create-ip {}", pzone.vnic_name());
-    let status = tokio::process::Command::new("zlogin")
+    let _status = tokio::process::Command::new("zlogin")
         .arg(pzone.name())
         .arg(command)
         .status()
         .await?;
-    let command = format!("ipadm create-addr -T static -a {} {}/v4", ip, pzone.vnic_name());
-    let status = tokio::process::Command::new("zlogin")
+    let command = format!(
+        "ipadm create-addr -T static -a {} {}/v4",
+        ip,
+        pzone.vnic_name()
+    );
+    let _status = tokio::process::Command::new("zlogin")
         .arg(pzone.name())
         .arg(command)
         .status()
         .await?;
     let command = "route -p add default 10.0.0.1";
-    let status = tokio::process::Command::new("zlogin")
+    let _status = tokio::process::Command::new("zlogin")
         .arg(pzone.name())
         .arg(command)
         .status()
@@ -170,4 +186,3 @@ pub async fn configure_zone_networking(pzone: &PipelineZone) -> Result<()> {
 
     Ok(())
 }
-
