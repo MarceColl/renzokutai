@@ -27,44 +27,117 @@
 ///!                 ▼
 ///!               Failed
 ///!
-use crate::Value;
+use crate::config::{Filter, Frame, Value};
+use crate::filterable::Filterable;
 use anyhow::{Result, anyhow};
 use owo_colors::OwoColorize;
-use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::iter::Iterator;
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::RwLock;
 
 mod runnable;
 
 pub use runnable::*;
 
+#[derive(Debug)]
+pub struct Steps {
+    vec: Vec<Rc<RefCell<Step>>>,
+}
+
 /// Container of steps to run in a pipeline
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ValidatedSteps {
-    pub steps_by_name: HashMap<String, ValidatedStep>,
+    #[serde(rename = "step")]
+    vec: Vec<ValidatedStep>,
+}
+
+impl Steps {
+    pub fn new() -> Self {
+        Self { vec: Vec::new() }
+    }
+
+    pub fn add_empty(&mut self) -> Frame {
+        let s = Rc::new(RefCell::new(Step::default()));
+        self.vec.push(s.clone());
+        Frame::Step(s.clone())
+    }
+
+    pub fn select(&self, filter: &Option<Filter>) -> Result<Frame> {
+        let matching: Vec<_> = self
+            .vec
+            .iter()
+            .filter(|f| f.borrow().filter(filter))
+            .collect();
+
+        match matching[..] {
+            [x] => Ok(Frame::Step(x.clone())),
+            [] => Err(anyhow!("No element matched the filter")),
+            _ => Err(anyhow!("More than one element matched the filter")),
+        }
+    }
+
+    pub fn validate(&self) -> Result<ValidatedSteps> {
+        let step_names: HashSet<String> = self
+            .vec
+            .iter()
+            .map(|s| s.borrow().name.clone().ensure())
+            .collect::<Result<HashSet<String>>>()?;
+        let vsteps = self
+            .vec
+            .iter()
+            .map(|r| r.borrow().validate(&step_names))
+            .collect::<Result<Vec<ValidatedStep>>>()?;
+        Ok(ValidatedSteps { vec: vsteps })
+    }
 }
 
 impl ValidatedSteps {
     pub fn as_runnable(&self) -> RunnableSteps {
         RunnableSteps {
-            steps: self
-                .steps_by_name
-                .iter()
-                .map(|(_k, s)| s.as_runnable())
-                .collect(),
+            steps: self.vec.iter().map(|s| s.as_runnable()).collect(),
         }
+    }
+
+    pub fn as_steps(&self) -> Steps {
+        let steps = self
+            .vec
+            .iter()
+            .map(|p| Rc::new(RefCell::new(p.as_step())))
+            .collect();
+        Steps { vec: steps }
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Dependency {
+    pub name: Value<String>,
+}
+
+impl Dependency {
+    pub fn validate(&self, step_names: &HashSet<String>) -> Result<ValidatedDependency> {
+        let name = self.name.ensure()?;
+
+        if step_names.contains(&name) {
+            Ok(ValidatedDependency { name: name.clone() })
+        } else {
+            Err(anyhow!("Step depends on a non-existing step: {}", name))
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ValidatedDependency {
     pub name: String,
 }
 
-#[derive(Debug, Default, Clone, Serialize, PartialEq)]
-pub struct ValidatedDependency {
-    pub name: String,
+impl ValidatedDependency {
+    pub fn as_dependency(&self) -> Dependency {
+        Dependency {
+            name: Value::Set(self.name.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -74,31 +147,30 @@ pub struct Step {
     pub depends: Vec<Dependency>,
 }
 
-#[derive(Debug, Serialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ValidatedStep {
     #[serde(rename = "@name")]
     pub name: String,
     #[serde(rename = "@script")]
     pub script: String,
+    #[serde(default)]
     #[serde(rename = "depend")]
     pub depends: Vec<ValidatedDependency>,
 }
 
 impl Step {
-    pub fn validate(&self) -> Result<ValidatedStep> {
-        let name = match &self.name {
-            Value::Unset => Err(anyhow!("name is unset")),
-            Value::Set(name) => Ok(name),
-        }?;
-        let script = match &self.script {
-            Value::Unset => Err(anyhow!("script is unset")),
-            Value::Set(script) => Ok(script),
-        }?;
+    pub fn validate(&self, step_names: &HashSet<String>) -> Result<ValidatedStep> {
+        let name = self.name.ensure()?;
+        let script = self.script.ensure()?;
+
         Ok(ValidatedStep {
             name: name.clone(),
             script: script.clone(),
-            // TODO(Marce)
-            depends: Vec::new(),
+            depends: self
+                .depends
+                .iter()
+                .map(|d| d.validate(&step_names))
+                .collect::<Result<Vec<ValidatedDependency>>>()?,
         })
     }
 
@@ -129,17 +201,6 @@ impl Step {
     }
 }
 
-impl crate::Filterable for Step {
-    fn inner_filter(&self, filter: &crate::Filter) -> bool {
-        match filter.key.as_str() {
-            "name" => self.name == Value::Set(filter.value.clone()),
-            "script" => self.script == Value::Set(filter.value.clone()),
-            // "depends" => self.depends == filter.value,
-            _ => false,
-        }
-    }
-}
-
 impl ValidatedStep {
     pub fn run(&self) -> Result<()> {
         Ok(())
@@ -156,6 +217,14 @@ impl ValidatedStep {
         self.depends
             .iter()
             .all(|d| finished_steps.contains(&d.name))
+    }
+
+    pub fn as_step(&self) -> Step {
+        Step {
+            name: Value::Set(self.name.clone()),
+            script: Value::Set(self.script.clone()),
+            depends: self.depends.iter().map(|s| s.as_dependency()).collect(),
+        }
     }
 }
 

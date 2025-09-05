@@ -42,11 +42,16 @@ impl PipelineZone {
         format!("{}_internal0", self.name())
     }
 
-    pub fn get_run_pzone(&self) -> Self {
+    pub fn get_run_pzone(&self, run_id: &String) -> Self {
         PipelineZone {
             pipeline: self.pipeline.clone(),
-            zone_type: ZoneType::Run("a9skl10".to_string()),
+            zone_type: ZoneType::Run(run_id.clone()),
         }
+    }
+
+    pub fn halt(&self) -> Result<()> {
+        zone::Adm::new(self.name()).halt_blocking()?;
+        Ok(())
     }
 
     pub fn exec(&self, command: impl AsRef<OsStr>) -> Result<tokio::process::Child> {
@@ -112,30 +117,28 @@ fn list() -> Result<Vec<zone::Zone>> {
     Ok(zone::Adm::list_blocking()?)
 }
 
-pub async fn create_zone_from_base(base_pzone: &PipelineZone) -> Result<PipelineZone> {
-    let run_pzone = base_pzone.get_run_pzone();
-
-    print!("Creating VNIC {}...", run_pzone.vnic_name().cyan());
+pub async fn create_zone_from_base(target_pzone: &PipelineZone, base_pzone: &PipelineZone) -> Result<()> {
+    print!("Creating VNIC {}...", target_pzone.vnic_name().cyan());
     io::stdout().lock().flush().unwrap();
-    crate::dladm::ensure_nic_exists(&run_pzone.vnic_name()).await?;
+    crate::dladm::ensure_nic_exists(&target_pzone.vnic_name()).await?;
     println!("{}", "DONE".green());
 
-    print!("Configuring zone {}...", run_pzone.name().cyan());
+    print!("Configuring zone {}...", target_pzone.name().cyan());
     io::stdout().lock().flush().unwrap();
-    crate::zones::configure_zone_with_default_config(&run_pzone).await?;
+    crate::zones::configure_zone_with_default_config(&target_pzone).await?;
     println!("{}", "DONE".green());
 
     print!("Cloning source zone {}...", base_pzone.name().cyan());
     io::stdout().lock().flush().unwrap();
-    zone::Adm::new(run_pzone.name()).clone_blocking(base_pzone.name())?;
+    zone::Adm::new(target_pzone.name()).clone_blocking(base_pzone.name())?;
     println!("{}", "DONE".green());
 
-    print!("Booting zone {}...", run_pzone.name().cyan());
+    print!("Booting zone {}...", target_pzone.name().cyan());
     io::stdout().lock().flush().unwrap();
-    zone::Adm::new(run_pzone.name()).boot_blocking()?;
+    zone::Adm::new(target_pzone.name()).boot_blocking()?;
     println!("{}", "DONE".green());
 
-    Ok(run_pzone)
+    Ok(())
 }
 
 pub async fn configure_zone_with_default_config(pzone: &PipelineZone) -> Result<()> {

@@ -1,4 +1,4 @@
-use crate::step::ValidatedStep;
+use crate::config::ValidatedStep;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use owo_colors::OwoColorize;
@@ -46,8 +46,8 @@ impl InnerRunnableStep {
     pub async fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
         self.result.status = Status::Pending;
         let mut child = pzone.exec(format!(
-            "for i in {{1..3}}; do echo \"HELLO FROM {}!\"; sleep 2; done; ls",
-            self.step.name
+            "/usr/bin/sh -x ./renzokutai/{}",
+            self.step.script
         ))?;
 
         let stdout = child.stdout.take().unwrap();
@@ -56,6 +56,7 @@ impl InnerRunnableStep {
         let mut stdout_reader = BufReader::new(stdout).lines();
         let mut stderr_reader = BufReader::new(stderr).lines();
 
+        // TODO(Marce): Save into the DB
         tokio::select! {
             _result = async {
                 while let Some(line) = stdout_reader.next_line().await? {

@@ -16,3 +16,8 @@ serde = { version =  "1.0", features = ["derive"] }
 serde-xml-rs = "0.8"
 topo_sort = "0.4"
 futures = "0.3.31"
+sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite" ] }
+doors = "0.8.1"
+clap = { version = "4.5.47", features = ["derive"] }
+rand = "0.8"
+askama = "0.14.0"
