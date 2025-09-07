@@ -71,8 +71,9 @@ impl ValidatedPackages {
             "rust".yellow()
         );
         io::stdout().lock().flush().unwrap();
-        pzone.exec("pkg install git")?.wait().await?;
-        pzone.exec("pkgin -y install rust")?.wait().await?;
+        pzone.exec("pkg install git gcc14")?.wait().await?;
+        pzone.exec("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh")?.wait().await?;
+        // pzone.exec("pkgin -y install rust")?.wait().await?;
         println!("{}", "DONE".green());
         Ok(())
     }

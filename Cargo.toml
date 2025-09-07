@@ -1,5 +1,5 @@
 [package]
-name = "teisuu"
+name = "renzokutai"
 version = "0.1.0"
 edition = "2024"
 
@@ -21,3 +21,5 @@ doors = "0.8.1"
 clap = { version = "4.5.47", features = ["derive"] }
 rand = "0.8"
 askama = "0.14.0"
+tower-http = { version = "0.6.6", features = ["fs"] }
+git2 = "0.20.2"	

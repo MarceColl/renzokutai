@@ -54,5 +54,4 @@ mainaining a good balance between speed and simplicity.
 
     Pipeline URL: <string>https://ci.gyoju.net/pipeline/katarineko</string>
      Webhook URL: <string>https://ci.gyoju.net/pipeline/katarineko/webhook</string>
-
 ```

@@ -141,9 +141,10 @@ impl ValidatedPipeline {
     pub fn generate_run_id(&self) -> String {
         thread_rng()
             .sample_iter(&Alphanumeric)
-            .take(8)
+            .take(4)
             .map(char::from)
-            .collect()
+            .collect::<String>()
+            .to_lowercase()
     }
 
     pub fn base_pzone(&self) -> PipelineZone {

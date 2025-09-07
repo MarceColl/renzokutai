@@ -46,7 +46,7 @@ impl InnerRunnableStep {
     pub async fn run(&mut self, pzone: &crate::zones::PipelineZone) -> Result<()> {
         self.result.status = Status::Pending;
         let mut child = pzone.exec(format!(
-            "/usr/bin/sh -x ./renzokutai/{}",
+            ". ~/.profile && cd ./renzokutai/ && /usr/bin/sh -x ./{}",
             self.step.script
         ))?;
 
@@ -103,7 +103,7 @@ impl RunnableSteps {
             }
 
             match set.join_next().await {
-                Some(res) => println!("Step finished: {:?}", res),
+                Some(res) => println!("Step {}", "DONE".green()),
                 None => break,
             }
         }

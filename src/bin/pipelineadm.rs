@@ -11,5 +11,6 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    teisuu::config::builder(&args.pipeline).await
+    let vp = renzokutai::config::ValidatedPipeline::load(&args.pipeline)?.expect("Unknown pipeline");
+    vp.run().await
 }

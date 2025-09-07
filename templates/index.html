@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>git</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: monospace;
+            background: #6bc26b;
+            color: #000;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            border: 2px solid #000;
+        }
+
+        .header {
+            padding: 15px;
+            border-bottom: 2px solid #000;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: normal;
+        }
+
+        .nav {
+            padding: 10px 15px;
+            border-bottom: 1px solid #000;
+        }
+
+        .nav a {
+            color: #000;
+            text-decoration: none;
+            margin-right: 20px;
+        }
+
+        .nav a:hover {
+            text-decoration: underline;
+        }
+
+        .repo-list {
+            padding: 15px;
+            border-bottom: 1px solid #000;
+        }
+
+        .repo-list h2 {
+            font-size: 14px;
+            font-weight: normal;
+            margin-bottom: 10px;
+        }
+
+        .repo-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .repo-table td {
+            padding: 5px 10px;
+            border-bottom: 1px dotted #000;
+        }
+
+        .repo-table tr:hover {
+            background: #000;
+            color: #fff;
+        }
+
+        .repo-table tr:hover a {
+            color: #fff;
+        }
+
+        .repo-table a {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .repo-table a:hover {
+            text-decoration: underline;
+        }
+
+        .repo-view {
+            padding: 15px;
+        }
+
+        .path {
+            padding: 10px 0;
+            border-bottom: 1px solid #000;
+            margin-bottom: 15px;
+        }
+
+        .path a {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .path a:hover {
+            text-decoration: underline;
+        }
+
+        .tabs {
+            margin-bottom: 15px;
+        }
+
+        .tabs a {
+            color: #000;
+            text-decoration: none;
+            padding: 5px 10px;
+            border: 1px solid #000;
+            margin-right: 5px;
+            display: inline-block;
+        }
+
+        .tabs a.active {
+            background: #000;
+            color: #fff;
+        }
+
+        .tabs a:hover:not(.active) {
+            background: #000;
+            color: #fff;
+        }
+
+        .commit-info {
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #000;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+
+        .file-list {
+            border: 1px solid #000;
+        }
+
+        .file-list table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .file-list th {
+            text-align: left;
+            padding: 5px 10px;
+            border-bottom: 2px solid #000;
+            background: #fff;
+            font-weight: normal;
+        }
+
+        .file-list td {
+            padding: 5px 10px;
+            border-bottom: 1px dotted #000;
+        }
+
+        .file-list tr:hover td {
+            background: #000;
+            color: #fff;
+        }
+
+        .file-list tr:hover a {
+            color: #fff;
+        }
+
+        .file-list a {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .file-list a:hover {
+            text-decoration: underline;
+        }
+
+        .mode {
+            font-size: 11px;
+        }
+
+        .size {
+            text-align: right;
+            font-size: 11px;
+        }
+
+        .log-list {
+            border: 1px solid #000;
+            margin-top: 15px;
+        }
+
+        .log-list table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .log-list th {
+            text-align: left;
+            padding: 5px 10px;
+            border-bottom: 2px solid #000;
+            font-weight: normal;
+        }
+
+        .log-list td {
+            padding: 5px 10px;
+            border-bottom: 1px dotted #000;
+            font-size: 12px;
+        }
+
+        .log-list tr:hover td {
+            background: #000;
+            color: #fff;
+        }
+
+        .log-list tr:hover a {
+            color: #fff;
+        }
+
+        .log-list a {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .log-list a:hover {
+            text-decoration: underline;
+        }
+
+        .hash {
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        .footer {
+            padding: 10px 15px;
+            border-top: 2px solid #000;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        pre {
+            font-family: monospace;
+            font-size: 12px;
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #000;
+            overflow-x: auto;
+        }
+
+        .readme {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #000;
+        }
+
+        .readme h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #000;
+        }
+
+        .readme pre {
+            border: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>霊獣</h1>
+        </div>
+        
+        <div class="nav">
+            <a href="#">index</a>
+            <a href="#">about</a>
+        </div>
+
+        <div class="repo-list">
+            <h2>Repositories</h2>
+            <table class="repo-table">
+                <tr>
+		    <td width="200"><a href="#repo">renzokutai</a></td>
+                    <td width="400">A git and CI server built on illumos primitives</td>
+                    <td width="120">2 hours ago</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="repo-view">
+            <div class="path">
+		<a href="#">repos</a> / <a href="#">renzokutai</a> / 
+            </div>
+
+	    {%- match self -%}
+	    {%- when Self::TreeView { commit, repo_name, files, readme } -%}
+		    <div class="tabs">
+			<a href="#" class="active">tree</a>
+			<a href="#">log</a>
+			<a href="#">refs</a>
+		    </div>
+
+		    <div class="commit-info">
+			commit {{ commit.id }}<br>
+			Author: {{ commit.author }}<br>
+			Date: 2 hours ago<br>
+			<br>
+			{{ commit.message }}
+		    </div>
+
+		    <div class="file-list">
+			<table>
+			    <thead>
+				<tr>
+				    <th width="100">mode</th>
+				    <th>name</th>
+				    <th width="80">size</th>
+				</tr>
+			    </thead>
+			    <tbody>
+				{% for node in files %}
+				<tr>
+				    <td class="mode">{{ node.filemode }}</td>
+				    <td><a href="{{ node.name }}">{{ node.name }}</a></td>
+				    <td class="size">-</td>
+				</tr>
+				{% endfor %}
+			    </tbody>
+			</table>
+		    </div>
+
+		    {% if let Some(readme) = readme %}
+		    <div class="readme">
+			<h3>README</h3>
+			<pre>{{ readme }}</pre>
+		    </div>
+		    {% endif %}
+	    {%- when Self::BlobView { commit, repo_name, content } -%}
+		    <div class="commit-info">
+			commit {{ commit.id }}<br>
+			Author: {{ commit.author }}<br>
+			Date: 2 hours ago<br>
+			<br>
+			{{ commit.message }}
+		    </div>
+
+		    <pre>{{ content }}</pre>
+
+	    {%- endmatch -%}
+        </div>
+    </div>
+</body>
+</html>
