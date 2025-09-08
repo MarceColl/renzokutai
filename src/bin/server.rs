@@ -1,7 +1,8 @@
 use git2::{Repository, TreeWalkMode, TreeWalkResult};
 use askama::Template;
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use axum::{
     response::{Html, IntoResponse},
     routing::get,
@@ -30,14 +31,22 @@ impl RCommit {
 struct RNode {
     name: String,
     kind: git2::ObjectType,
+    link: String,
     filemode: i32,
 }
 
 #[derive(Template)]
 #[template(path="index.html")]
-enum RepoTemplate {
-    TreeView { repo_name: String, commit: RCommit, files: Vec<RNode>, readme: Option<String> },
-    BlobView { repo_name: String, commit: RCommit, content: String },
+struct RepoTemplate {
+    path: PathBuf,
+    repo_name: String,
+    commit: RCommit,
+    view: RepoView
+}
+
+enum RepoView {
+    TreeView { files: Vec<RNode>, readme: Option<String> },
+    BlobView { content: String },
 }
 
 pub struct Repo {
@@ -56,43 +65,48 @@ async fn view_repo(
     let commit = main_ref.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
-    let entry = match path {
-        Some(axum::extract::Path(path)) => tree.get_path(Path::new(&path)).unwrap(),
-        None => tree.get_path(Path::new("/")).unwrap(),
+    let (obj, path) = match path {
+        Some(axum::extract::Path(path)) => (tree.get_path(Path::new(&path)).unwrap().to_object(&repo).unwrap(), PathBuf::from_str(&path).unwrap()),
+        None => (tree.into_object(), PathBuf::from_str("").unwrap()),
     };
 
-    let template = match entry.kind() {
+    let template = match obj.kind() {
         Some(git2::ObjectType::Blob) => {
-            let blob = repo.find_blob(entry.id()).unwrap();
+            let blob = repo.find_blob(obj.id()).unwrap();
             let content = String::from_utf8(blob.content().to_vec()).unwrap();
 
-            RepoTemplate::BlobView {
+            RepoTemplate {
+                path: path,
                 repo_name,
                 commit: RCommit::from_commit(&commit),
-                content: content,
+                view: RepoView::BlobView {
+                    content: content,
+                }
             }
         },
         Some(git2::ObjectType::Tree) => {
-            let tree = entry.to_object(&repo).unwrap().into_tree().unwrap();
+            let tree = obj.into_tree().unwrap();
             let mut files = Vec::new();
 
             tree.walk(TreeWalkMode::PreOrder, |root, entry| {
-                let file_path = if root.is_empty() {
-                    entry.name().unwrap_or("").to_string()
-                } else {
-                    format!("{}{}", root, entry.name().unwrap_or(""))
-                };
+                let name = entry.name().unwrap_or("").to_string();
+                let mut obj_path = path.clone();
+                obj_path.push(&entry.name().unwrap_or(""));
+
+                println!("{}", obj_path.display());
 
                 if entry.kind() == Some(git2::ObjectType::Blob) {
                     files.push(RNode {
-                        name: file_path,
+                        link: format!("/repos/{}/{}", repo_name, obj_path.display()),
+                        name,
                         kind: entry.kind().unwrap(),
                         filemode: entry.filemode(),
                     });
                     TreeWalkResult::Ok
                 } else {
                     files.push(RNode {
-                        name: file_path,
+                        link: format!("/repos/{}/{}", repo_name, obj_path.display()),
+                        name,
                         kind: entry.kind().unwrap(),
                         filemode: entry.filemode(),
                     });
@@ -106,11 +120,14 @@ async fn view_repo(
             let content = String::from_utf8(blob.content().to_vec()).unwrap();
             */
 
-            RepoTemplate::TreeView {
-                repo_name: repo_name,
+            RepoTemplate {
+                path: path,
+                repo_name,
                 commit: RCommit::from_commit(&commit),
-                files: files,
-                readme: None,
+                view: RepoView::TreeView {
+                    files,
+                    readme: None,
+                }
             }
         },
         _ => todo!(),
@@ -131,7 +148,9 @@ async fn main() -> Result<()> {
     */
 
     let app = Router::new()
-        .route("/repo/renzokutai/{*path}", get(view_repo))
+        .route("/repos/renzokutai", get(view_repo))
+        .route("/repos/renzokutai/", get(view_repo))
+        .route("/repos/renzokutai/{*path}", get(view_repo))
         .nest_service("/static", ServeDir::new("static"));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

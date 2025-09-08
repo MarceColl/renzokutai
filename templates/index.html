@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>git</title>
+    <title>renzokutai - git - 霊獣</title>
     <style>
         * {
             margin: 0;
@@ -110,20 +110,20 @@
 
         .tabs {
             margin-bottom: 15px;
-        }
 
-        .tabs a {
-            color: #000;
-            text-decoration: none;
-            padding: 5px 10px;
-            border: 1px solid #000;
-            margin-right: 5px;
-            display: inline-block;
-        }
+	    & a {
+		    color: #000;
+		    text-decoration: none;
+		    padding: 5px 10px;
+		    border: 1px solid #000;
+		    margin-right: 5px;
+		    display: inline-block;
 
-        .tabs a.active {
-            background: #000;
-            color: #fff;
+		&.active {
+		    background: #000;
+		    color: #fff;
+		}
+	    }
         }
 
         .tabs a:hover:not(.active) {
@@ -254,20 +254,49 @@
             margin-top: 20px;
             padding: 15px;
             border: 1px solid #000;
-        }
 
-        .readme h3 {
-            font-size: 14px;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #000;
-        }
+	    & h3 {
+		    font-size: 14px;
+		    margin-bottom: 10px;
+		    padding-bottom: 5px;
+		    border-bottom: 1px solid #000;
+	    }
 
-        .readme pre {
-            border: none;
-            padding: 0;
-            margin: 10px 0;
+	    & pre {
+		    border: none;
+		    padding: 0;
+		    margin: 10px 0;
+	    }
         }
+	
+	.pipeline {
+		margin-top: 15px;
+		background: black;
+		color: white;
+		padding: 6px;
+		padding-left: 12px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+
+		& .pipeline-running {
+			background: orange;
+			width: 12px;
+			height: 12px;
+			border-radius: 100%;
+			animation: pulsate 1.5s ease-in-out infinite;
+		}
+	}
+
+	@keyframes pulsate {
+		0%, 100% {
+			opacity: 1;
+		}
+
+		50% {
+			opacity: 0.6;
+		}
+	}
     </style>
 </head>
 <body>
@@ -294,15 +323,21 @@
 
         <div class="repo-view">
             <div class="path">
-		<a href="#">repos</a> / <a href="#">renzokutai</a> / 
+		    <a href="#">repos</a> / <a href="#">{{ repo_name }}</a> 
+		    {%- for component in path.components() -%}
+		      {% if let std::path::Component::Normal(c) = component %}
+		        / <a href="#">{{ c.to_str().unwrap() }}</a>
+		      {%- endif -%}
+		    {%- endfor -%}
             </div>
 
-	    {%- match self -%}
-	    {%- when Self::TreeView { commit, repo_name, files, readme } -%}
+	    {%- match view -%}
+	    {%- when RepoView::TreeView { files, readme } -%}
 		    <div class="tabs">
 			<a href="#" class="active">tree</a>
 			<a href="#">log</a>
 			<a href="#">refs</a>
+			<a href="#">pipelines</a>
 		    </div>
 
 		    <div class="commit-info">
@@ -311,6 +346,7 @@
 			Date: 2 hours ago<br>
 			<br>
 			{{ commit.message }}
+			<div class="pipeline"><span class="pipeline-running"></span>running...</div>
 		    </div>
 
 		    <div class="file-list">
@@ -326,7 +362,7 @@
 				{% for node in files %}
 				<tr>
 				    <td class="mode">{{ node.filemode }}</td>
-				    <td><a href="{{ node.name }}">{{ node.name }}</a></td>
+				    <td><a href="{{ node.link }}">{{ node.name }}</a></td>
 				    <td class="size">-</td>
 				</tr>
 				{% endfor %}
@@ -340,7 +376,7 @@
 			<pre>{{ readme }}</pre>
 		    </div>
 		    {% endif %}
-	    {%- when Self::BlobView { commit, repo_name, content } -%}
+	    {%- when RepoView::BlobView { content } -%}
 		    <div class="commit-info">
 			commit {{ commit.id }}<br>
 			Author: {{ commit.author }}<br>
